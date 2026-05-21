@@ -1,0 +1,12 @@
+error: function named `foo`
+  --> tests/ui/foo_functions_late.rs:23:1
+   |
+LL | fn foo() {}
+   | ^^^^^^^^^^^
+   |
+   = help: consider using a more meaningful name
+   = note: `-D clippy::foo-functions-late` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::foo_functions_late)]`
+
+error: aborting due to 1 previous error
+
