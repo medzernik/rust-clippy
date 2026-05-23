@@ -1,10 +1,12 @@
 use clippy_utils::diagnostics::span_lint_and_help;
 use rustc_hir::intravisit::FnKind;
 use rustc_hir::*;
+use rustc_infer::infer::canonical::ir::TypeVisitableExt;
 use rustc_lint::{LateContext, LateLintPass};
 use rustc_session::declare_lint_pass;
 use rustc_span::Span;
 use rustc_span::def_id::LocalDefId;
+
 
 declare_clippy_lint! {
     /// ### What it does
@@ -32,7 +34,7 @@ impl LateLintPass<'_> for FooFunctionsLate {
         &mut self,
         cx: &LateContext<'_>,
         fn_kind: FnKind<'_>,
-        _: &'_ FnDecl<'_>,
+        fn_decl: &'_ FnDecl<'_>,
         _: &'_ Body<'_>,
         span: Span,
         _: LocalDefId,
@@ -50,9 +52,13 @@ impl LateLintPass<'_> for FooFunctionsLate {
     }
 }
 
-fn is_foo_fn(fn_kind: FnKind<'_>) -> bool {
+fn is_foo_fn(fn_kind: FnKind<'_>, fn_decl: FnDecl<'_>) -> bool {
     match fn_kind {
-        FnKind::ItemFn(ident, _, _) => {
+        FnKind::ItemFn(ident, _, header) => {
+           let has_param = ident.has_param();
+            // ident.span.references_error()
+            fn_decl.inputs.iter()
+
             // check if `fn` name is `foo`
             ident.name.as_str() == "foo"
         },

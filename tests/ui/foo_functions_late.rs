@@ -5,7 +5,8 @@
 struct A;
 impl A {
     pub fn fo(&self) {}
-    pub fn foo(&self) {}
+    #[clippy::dump]
+    pub fn foo(&self, text: String, text_ref: &String) {}
     //~^ foo_functions_late
     pub fn food(&self) {}
 }
@@ -28,5 +29,5 @@ fn main() {
     // We also don't want to lint method calls
     foo();
     let a = A;
-    a.foo();
+    a.foo("".to_string(), &"test".to_string());
 }
