@@ -6,21 +6,29 @@
 pub struct A;
 
 impl A {
-    pub fn fo(&self) {}
-    pub fn foo(&self, item: &A) {
-        let x = item.clone();
+    pub fn no_ref(&self) {
+        let a = A;
+        let cloned_no_ref = a.clone();
+    }
+
+    pub fn cloning_ref(&self, item: &A) {
+        let cloned_ref_param = item.clone();
     }
     //~^ fn_param_ref_cloned_info
-    pub fn food(&self) {}
+
+    pub fn using_ref(&self, item: &A) {
+        let x = "";
+        let b = item;
+    }
 }
 
-pub fn foo(item: &A) {
-    let y = item.clone();
+pub fn cloning_ref(item: &A) {
+    let cloned_ref_param = item.clone();
 }
 //~^ fn_param_ref_cloned_info
 
 fn main() {
     let a = A;
-    a.foo(&A);
-    foo(&A);
+    a.cloning_ref(&A);
+    cloning_ref(&A);
 }
