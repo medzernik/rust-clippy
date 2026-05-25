@@ -12,6 +12,7 @@ impl A {
     }
 
     pub fn cloning_ref(&self, item: &A) {
+        // #[clippy::dump]
         let cloned_ref_param = item.clone();
     }
     //~^ fn_param_ref_cloned_info
@@ -22,13 +23,14 @@ impl A {
     }
 }
 
-pub fn cloning_ref(item: &A) {
+pub fn cloning_ref(test: A, item: &A) {
     let cloned_ref_param = item.clone();
 }
 //~^ fn_param_ref_cloned_info
 
 fn main() {
     let a = A;
+    let b = A;
     a.cloning_ref(&A);
-    cloning_ref(&A);
+    cloning_ref(b, &A);
 }

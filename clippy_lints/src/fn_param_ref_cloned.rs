@@ -1,9 +1,17 @@
 use clippy_utils::diagnostics::span_lint_and_help;
 use clippy_utils::res::{MaybeDef, MaybeTypeckRes};
-use rustc_hir::{Expr, ExprKind};
+use rustc_data_structures::fx::FxHashMap;
+use rustc_hir::{
+    Body, Expr, ExprKind, HirId, HirIdMap, ImplItem, ImplItemImplKind, ImplItemKind, Node, PatKind, TraitItem,
+    TraitItemKind,
+};
 use rustc_lint::{LateContext, LateLintPass};
-use rustc_session::declare_lint_pass;
-use rustc_span::sym;
+use rustc_middle::ty;
+use rustc_middle::ty::{ConstKind, GenericArgKind, GenericArgsRef};
+use rustc_session::impl_lint_pass;
+use rustc_span::def_id::DefId;
+use rustc_span::{sym, Ident, Span};
+use std::cell::Cell;
 
 declare_clippy_lint! {
     /// ### What it does
@@ -27,9 +35,18 @@ declare_clippy_lint! {
     "you should pass by value instead of cloning a passed reference"
 }
 
-declare_lint_pass!(FnParamRefClonedLate => [FN_PARAM_REF_CLONED_INFO]);
+impl_lint_pass!(FnParamRefClonedLate => [FN_PARAM_REF_CLONED_INFO]);
+
+#[derive(Default)]
+pub struct FnParamRefClonedLate {
+    body_obj: HirIdMap<usize>,
+    fn_decl_obj: HirIdMap<usize>,
+}
 
 impl<'tcx> LateLintPass<'tcx> for FnParamRefClonedLate {
+    fn check_body(&mut self, cx: &LateContext<'tcx>, body: &Body<'tcx>) {
+    }
+
     fn check_expr(&mut self, cx: &LateContext<'tcx>, expr: &'tcx Expr<'_>) {
         // Check our expr is calling a method with pattern matching
         if let ExprKind::MethodCall(path, _, _, span) = &expr.kind
@@ -52,70 +69,14 @@ impl<'tcx> LateLintPass<'tcx> for FnParamRefClonedLate {
         }
     }
 }
-
-// impl LateLintPass<'_> for FnParamRefClonedLate {
-//     fn check_expr(&mut self, cx: &LateContext<'_>, expr: &'_ Expr<'_>) {
-//         // Check our expr is calling a method
-//         if let hir::ExprKind::MethodCall(path, _, _self_arg, ..) = &expr.kind
-//             // Check the name of this method is `some_method`
-//             && path.ident.name == sym::clone
-//         // Optionally, check the type of the self argument.
-//         // - See "Checking for a specific type"
-//         {
-//             // ...
-//         }
-//     }
-// fn check_fn(
-//     &mut self,
-//     cx: &LateContext<'_>,
-//     fn_kind: FnKind<'_>,
-//     fn_decl: &'_ FnDecl<'_>,
-//     fn_body: &'_ Body<'_>,
-//     span: Span,
-//     _: LocalDefId,
-// ) {
-//
-//     if is_foo_fn(cx, fn_kind, fn_decl, fn_body) {
-//         span_lint_and_help(
-//             cx,
-//             FOO_FUNCTIONS_LATE,
-//             span,
-//             "function named `foo`",
-//             None,
-//             "consider using a more meaningful name",
-//         );
-//     }
-// }
-// }
-
-// fn is_foo_fn(cx: &LateContext<'_>, fn_kind: FnKind<'_>, fn_decl: &FnDecl<'_>, fn_body: &Body<'_>)
-// -> bool {     let mut header_items = HashMap::new();
-//     match fn_kind {
-//         FnKind::ItemFn(ident, _, header) => {
-//
-//             // the stuff should have been done by someone
-//             for item in fn_decl.inputs.iter() {
-//                 match item.kind {
-//                     TyKind::Ref(_, param) => {
-//                         header_items.insert(param.ty.hir_id, ());
-//                     }
-//                     _ => ()
-//                 }
-//             }
-//
-//             for item in fn_body.params.iter() {
-//                 let id = item.hir_id;
-//                 if header_items.get(&id).is_some() {
-//                     // item.
-//                     // item.pat.
-//                    // cx.typeck_results().expr_ty(&ExprId::from(id))
-//                 }
-//             }
-//
-//             // check if `fn` name is `foo`
-//             ident.name.as_str() == "foo"
-//         },
-//         // ignore closures
-//         _ => false,
+// fn has_matching_args(kind: FnKind, args: GenericArgsRef<'_>) -> bool {
+//     match kind {
+//         FnKind::Fn => true,
+//         FnKind::TraitFn => args.iter().enumerate().all(|(idx, subst)| match subst.kind() {
+//             GenericArgKind::Lifetime(_) => true,
+//             GenericArgKind::Type(ty) => matches!(*ty.kind(), ty::Param(ty) if ty.index as usize == idx),
+//             GenericArgKind::Const(c) => matches!(c.kind(), ConstKind::Param(c) if c.index as usize == idx),
+//         }),
+//         FnKind::ImplTraitFn(expected_args) => std::ptr::from_ref(args) as usize == expected_args,
 //     }
 // }
