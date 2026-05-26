@@ -14,8 +14,8 @@ impl A {
     pub fn cloning_ref(&self, item: &A) {
         // #[clippy::dump]
         let cloned_ref_param = item.clone();
+        //~^ fn_param_ref_cloned_info
     }
-    //~^ fn_param_ref_cloned_info
 
     pub fn using_ref(&self, item: &A) {
         let x = "";
@@ -25,8 +25,8 @@ impl A {
 
 pub fn cloning_ref(test: A, item: &A) {
     let cloned_ref_param = item.clone();
+    //~^ fn_param_ref_cloned_info
 }
-//~^ fn_param_ref_cloned_info
 
 fn main() {
     let a = A;
