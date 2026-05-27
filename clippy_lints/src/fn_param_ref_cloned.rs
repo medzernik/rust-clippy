@@ -1,7 +1,9 @@
-use clippy_utils::diagnostics::span_lint_and_help;
-use rustc_hir::{Body, HirIdMap, ImplItemKind, ItemKind, Node, TraitItemKind};
+use rustc_hir::intravisit::FnKind;
+use rustc_hir::{Body, FnDecl, PatKind, TyKind};
 use rustc_lint::{LateContext, LateLintPass};
 use rustc_session::impl_lint_pass;
+use rustc_span::def_id::LocalDefId;
+use rustc_span::Span;
 
 declare_clippy_lint! {
     /// ### What it does
@@ -27,59 +29,54 @@ declare_clippy_lint! {
 
 impl_lint_pass!(FnParamRefClonedLate => [FN_PARAM_REF_CLONED_INFO]);
 
+type ParameterIndex = usize;
+
 #[derive(Default)]
 pub struct FnParamRefClonedLate {
-    fn_decl_obj: HirIdMap<()>,
+    fn_decl_obj: Vec<ParameterIndex>,
 }
 
 impl<'tcx> LateLintPass<'tcx> for FnParamRefClonedLate {
-    fn check_body(&mut self, cx: &LateContext<'tcx>, body: &Body<'tcx>) {
-        let mut parents = cx.tcx.hir_parent_iter(body.value.hir_id);
-        let (item_id, sig, is_trait_item) = match parents.next() {
-            Some((_, Node::Item(i))) => {
-                if let ItemKind::Fn { sig, .. } = &i.kind {
-                    (i.owner_id, sig, false)
-                } else {
-                    return;
-                }
-            },
-            Some((_, Node::ImplItem(i))) => {
-                if !matches!(parents.next(),
-                    Some((_, Node::Item(i))) if matches!(&i.kind, ItemKind::Impl(i) if i.of_trait.is_none())
-                ) {
-                    return;
-                }
-                if let ImplItemKind::Fn(sig, _) = &i.kind {
-                    (i.owner_id, sig, false)
-                } else {
-                    return;
-                }
-            },
-            Some((_, Node::TraitItem(i))) => {
-                if let TraitItemKind::Fn(sig, _) = &i.kind {
-                    (i.owner_id, sig, true)
-                } else {
-                    return;
-                }
-            },
-            _ => return,
-        };
+    fn check_fn(
+        &mut self,
+        cx: &LateContext<'tcx>,
+        _: FnKind<'tcx>,
+        fn_decl: &'tcx FnDecl<'tcx>,
+        fn_body: &'tcx Body<'tcx>,
+        _: Span,
+        _: LocalDefId,
+    ) {
+        let mut ref_position = FnParamRefClonedLate::default();
+        for (iter, item) in fn_decl.inputs.iter().enumerate() {
+            match item.kind {
+                TyKind::Ref(_, reference) if !item.span.from_expansion() => {
+                    ref_position.fn_decl_obj.push(iter);
+                },
+                _ => (),
+            }
+        }
 
+        for iter in ref_position.fn_decl_obj.iter() {
+            let param = fn_body.params.get(*iter).unwrap();
 
-        let inputs = sig.decl.inputs;
-        let body_params = body.params;
-        dbg!(inputs);
-        dbg!(body_params);
-
-
-        span_lint_and_help(
-            cx,
-            FN_PARAM_REF_CLONED_INFO,
-            body_params.first().unwrap().span,
-            "function gets a parameter by reference, but you later clone it",
-            None,
-            "consider passing by value instead",
-        );
+            match param.pat.kind {
+                PatKind::Binding(a, b, c, d) => {
+                    dbg!({ a });
+                    dbg!({ b });
+                    dbg!({ c });
+                    dbg!({ d });
+                    clippy_utils::diagnostics::span_lint_and_help(
+                        cx,
+                        FN_PARAM_REF_CLONED_INFO,
+                        fn_decl.inputs.get(*iter).unwrap().span,
+                        "function gets a parameter by reference, but you later clone it",
+                        None,
+                        "consider passing by value instead",
+                    );
+                },
+                _ => {},
+            }
+        }
     }
 
     // fn check_expr(&mut self, cx: &LateContext<'tcx>, expr: &'tcx Expr<'_>) {
