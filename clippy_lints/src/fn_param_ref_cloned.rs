@@ -1,3 +1,4 @@
+use clippy_utils::ty::implements_trait;
 use rustc_hir::intravisit::FnKind;
 use rustc_hir::{Body, FnDecl, PatKind};
 use rustc_lint::{LateContext, LateLintPass};
@@ -37,10 +38,21 @@ pub struct FnParamRefClonedLate {
     fn_decl_obj: Vec<ParameterIndex>,
 }
 
-pub fn is_candidate_ty<'a>(cx: &LateContext<'a>, ty: &rustc_middle::ty::Ty<'a>, clone_trait_id: DefId) -> bool {
+pub fn is_candidate_ty<'a>(
+    cx: &LateContext<'a>,
+    ty: &rustc_middle::ty::Ty<'a>,
+    must_impl_trait: &[DefId],
+    cant_impl_trait: &[DefId],
+) -> bool {
     match ty.kind() {
         rustc_middle::ty::TyKind::Ref(a, b, c) => {
-            if clippy_utils::ty::implements_trait(cx, *b, clone_trait_id, &[]) {
+            if must_impl_trait
+                .iter()
+                .any(|def_id| implements_trait(cx, *b, *def_id, &[]))
+                && cant_impl_trait
+                    .iter()
+                    .all(|def_id| !implements_trait(cx, *b, *def_id, &[]))
+            {
                 true
             } else {
                 false
@@ -54,7 +66,7 @@ pub fn get_param_id_span(cx: &LateContext<'_>, param: &rustc_hir::Param<'_>) -> 
     match param.pat.kind {
         PatKind::Binding(a, b, c, d) => {
             if !c.span.from_expansion() {
-                Some((b, c.span))
+                Some((b, param.ty_span))
             } else {
                 None
             }
@@ -73,8 +85,11 @@ impl<'tcx> LateLintPass<'tcx> for FnParamRefClonedLate {
         _: Span,
         def_id: LocalDefId,
     ) {
-        let mut ref_position = FnParamRefClonedLate::default();
-        let clone_trait_id = cx.tcx.lang_items().clone_trait().unwrap();
+        let cant_impl_trait = [cx.tcx.lang_items().copy_trait().unwrap()];
+        let must_impl_trait = [
+            cx.tcx.lang_items().clone_trait().unwrap(),
+            cx.tcx.lang_items().drop_trait().unwrap(),
+        ];
 
         // MIR signature
         let sig = TyCtxt::fn_sig(cx.tcx, def_id.to_def_id());
@@ -91,7 +106,7 @@ impl<'tcx> LateLintPass<'tcx> for FnParamRefClonedLate {
             .zip(fn_body.params)
             .filter_map(|(ty, param)| {
                 if let Some((id, span)) = get_param_id_span(cx, param)
-                    && is_candidate_ty(cx, ty, clone_trait_id)
+                    && is_candidate_ty(cx, ty, &must_impl_trait, &cant_impl_trait)
                 {
                     Some((id, span))
                 } else {
@@ -109,83 +124,5 @@ impl<'tcx> LateLintPass<'tcx> for FnParamRefClonedLate {
                 "consider passing by value instead",
             );
         }
-
-        // for (iter, item) in fn_decl.inputs.iter().enumerate() {
-        //     match item.kind {
-        //         TyKind::Ref(_, reference) if !item.span.from_expansion() => {
-        //             dbg!(signature.inputs().get(iter).unwrap());
-        //             let clone_trait_id = cx.tcx.lang_items().clone_trait().unwrap();
-        //
-        //             if clippy_utils::ty::implements_trait(
-        //                 cx,
-        //                 *signature.inputs().get(iter).unwrap(),
-        //                 clone_trait_id,
-        //                 &[],
-        //             ) {
-        //                 dbg!(true);
-        //                 ref_position.fn_decl_obj.push(iter);
-        //             }
-        //         },
-        //         _ => (),
-        //     }
-        // }
-
-        // for iter in ref_position.fn_decl_obj.iter() {
-        //     let param = fn_body.params.get(*iter).unwrap();
-        //
-        //     match param.pat.kind {
-        //         PatKind::Binding(a, b, c, d) => {
-        //             dbg!({ a });
-        //             dbg!({ b });
-        //             dbg!({ c });
-        //             dbg!({ d });
-        //
-        //             clippy_utils::diagnostics::span_lint_and_help(
-        //                 cx,
-        //                 FN_PARAM_REF_CLONED_INFO,
-        //                 fn_decl.inputs.get(*iter).unwrap().span,
-        //                 "function gets a parameter by reference, but you later clone it",
-        //                 None,
-        //                 "consider passing by value instead",
-        //             );
-        //         },
-        //         _ => {},
-        //     }
-        // }
     }
-
-    // fn check_expr(&mut self, cx: &LateContext<'tcx>, expr: &'tcx Expr<'_>) {
-    //     // Check our expr is calling a method with pattern matching
-    //     if let ExprKind::MethodCall(path, _, _, span) = &expr.kind
-    //         // Check if the name of this method is `our_fancy_method`
-    //         && path.ident.name == sym::clone
-    //         // Check if the method belongs to the `sym::OurFancyTrait` trait.
-    //         // (for example, a `map` method could belong to user-defined trait instead of to
-    // `Iterator`)         // See the next section for more information.
-    //         && (
-    //         cx.ty_based_def(expr).opt_parent(cx).is_diag_item(cx, sym::Clone)
-    //         || cx.ty_based_def(expr).opt_parent(cx).is_diag_item(cx, sym::Copy))
-    //     {
-    //         println!("`expr` is a method call for `our_fancy_method`");
-    //         span_lint_and_help(
-    //             cx,
-    //             FN_PARAM_REF_CLONED_INFO,
-    //             *span,
-    //             "function gets a parameter by reference, but you later clone it",
-    //             None,
-    //             "consider passing by value instead",
-    //         );
-    //     }
-    // }
 }
-// fn has_matching_args(kind: FnKind, args: GenericArgsRef<'_>) -> bool {
-//     match kind {
-//         FnKind::Fn => true,
-//         FnKind::TraitFn => args.iter().enumerate().all(|(idx, subst)| match subst.kind() {
-//             GenericArgKind::Lifetime(_) => true,
-//             GenericArgKind::Type(ty) => matches!(*ty.kind(), ty::Param(ty) if ty.index as usize
-// == idx),             GenericArgKind::Const(c) => matches!(c.kind(), ConstKind::Param(c) if
-// c.index as usize == idx),         }),
-//         FnKind::ImplTraitFn(expected_args) => std::ptr::from_ref(args) as usize == expected_args,
-//     }
-// }
