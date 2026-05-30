@@ -1,10 +1,11 @@
+use clippy_utils::res::{MaybeDef, MaybeTypeckRes};
+use clippy_utils::sym;
 use clippy_utils::ty::implements_trait;
-use rustc_hir::intravisit::FnKind;
-use rustc_hir::{Body, FnDecl, PatKind};
+use rustc_hir::{Body, Expr, PatKind};
 use rustc_lint::{LateContext, LateLintPass};
 use rustc_middle::ty::TyCtxt;
 use rustc_session::impl_lint_pass;
-use rustc_span::def_id::{DefId, LocalDefId};
+use rustc_span::def_id::DefId;
 use rustc_span::Span;
 
 declare_clippy_lint! {
@@ -45,7 +46,7 @@ pub fn is_candidate_ty<'a>(
     cant_impl_trait: &[DefId],
 ) -> bool {
     match ty.kind() {
-        rustc_middle::ty::TyKind::Ref(a, b, c) => {
+        rustc_middle::ty::TyKind::Ref(_, b, _) => {
             if must_impl_trait
                 .iter()
                 .any(|def_id| implements_trait(cx, *b, *def_id, &[]))
@@ -64,8 +65,8 @@ pub fn is_candidate_ty<'a>(
 
 pub fn get_param_id_span(cx: &LateContext<'_>, param: &rustc_hir::Param<'_>) -> Option<(rustc_hir::HirId, Span)> {
     match param.pat.kind {
-        PatKind::Binding(a, b, c, d) => {
-            if !c.span.from_expansion() {
+        PatKind::Binding(_, b, c, _) => {
+            if !c.span.from_expansion() && !c.is_reserved() {
                 Some((b, param.ty_span))
             } else {
                 None
@@ -76,20 +77,14 @@ pub fn get_param_id_span(cx: &LateContext<'_>, param: &rustc_hir::Param<'_>) -> 
 }
 
 impl<'tcx> LateLintPass<'tcx> for FnParamRefClonedLate {
-    fn check_fn(
-        &mut self,
-        cx: &LateContext<'tcx>,
-        fn_kind: FnKind<'tcx>,
-        fn_decl: &'tcx FnDecl<'tcx>,
-        fn_body: &'tcx Body<'tcx>,
-        _: Span,
-        def_id: LocalDefId,
-    ) {
+    fn check_body(&mut self, cx: &LateContext<'tcx>, fn_body: &Body<'tcx>) {
         let cant_impl_trait = [cx.tcx.lang_items().copy_trait().unwrap()];
         let must_impl_trait = [
             cx.tcx.lang_items().clone_trait().unwrap(),
             cx.tcx.lang_items().drop_trait().unwrap(),
         ];
+
+        let def_id = cx.tcx.hir_body_owner_def_id(fn_body.id());
 
         // MIR signature
         let sig = TyCtxt::fn_sig(cx.tcx, def_id.to_def_id());
@@ -115,6 +110,22 @@ impl<'tcx> LateLintPass<'tcx> for FnParamRefClonedLate {
             })
             .collect();
         for (id, span) in candidates.iter() {
+            clippy_utils::diagnostics::span_lint_and_help(
+                cx,
+                FN_PARAM_REF_CLONED_INFO,
+                *span,
+                "function gets a parameter by reference, but you later clone it",
+                None,
+                "consider passing by value instead",
+            );
+        }
+    }
+
+    fn check_expr(&mut self, cx: &LateContext<'tcx>, expr: &'tcx Expr<'tcx>) {
+        if let rustc_hir::ExprKind::MethodCall(path, _, _, span) = &expr.kind
+            && path.ident.name == sym::Clone
+            && cx.ty_based_def(expr).opt_parent(cx).is_diag_item(cx, sym::Clone)
+        {
             clippy_utils::diagnostics::span_lint_and_help(
                 cx,
                 FN_PARAM_REF_CLONED_INFO,
