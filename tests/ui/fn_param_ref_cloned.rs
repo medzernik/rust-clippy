@@ -27,6 +27,8 @@ impl A {
 pub fn cloning_ref(vase: A, nase: &A, ich: &A) {
     let test = vase;
     let cloned_ref_param = nase.clone();
+    let arr = [1,2,3,4,5];
+    let result = arr.iter().sum::<i32>();
     //~^ fn_param_ref_cloned
 }
 

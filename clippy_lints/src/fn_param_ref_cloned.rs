@@ -1,11 +1,12 @@
+use clippy_utils::res::{MaybeDef, MaybeTypeckRes};
+use clippy_utils::sym;
 use clippy_utils::ty::implements_trait;
-use rustc_hir::intravisit::HirTyCtxt;
-use rustc_hir::{Body, PatKind};
+use rustc_hir::{Expr, PatKind};
 use rustc_lint::{LateContext, LateLintPass};
 use rustc_middle::ty::TyKind;
 use rustc_session::impl_lint_pass;
 use rustc_span::def_id::DefId;
-use rustc_span::{sym, Span};
+use rustc_span::Span;
 
 declare_clippy_lint! {
     /// ### What it does
@@ -79,15 +80,29 @@ pub fn get_param_id_span(cx: &LateContext<'_>, param: &rustc_hir::Param<'_>) -> 
 }
 
 impl<'tcx> LateLintPass<'tcx> for FnParamRefClonedLate {
-    fn check_body(&mut self, cx: &LateContext<'tcx>, fn_body: &Body<'tcx>) {
+    fn check_expr(&mut self, cx: &LateContext<'tcx>, expr: &'tcx Expr<'tcx>) {
         let cant_impl_trait = [cx.tcx.lang_items().copy_trait().unwrap()];
         let must_impl_trait = [
             cx.tcx.lang_items().clone_trait().unwrap(),
             cx.tcx.lang_items().drop_trait().unwrap(),
         ];
 
-        let def_id = cx.tcx.hir_body_owner_def_id(fn_body.id());
+        let fn_body = cx.enclosing_body.unwrap();
 
+        let def_id = cx.tcx.hir_body_owner_def_id(fn_body);
+
+        if let rustc_hir::ExprKind::MethodCall(path, _, _, span) = &expr.kind
+        {
+            dbg!(path);
+            clippy_utils::diagnostics::span_lint_and_help(
+                cx,
+                FN_PARAM_REF_CLONED_INFO,
+                *span,
+                "function gets a parameter by reference, but you later clone it",
+                None,
+                "consider passing by value instead",
+            );
+        }
         // MIR signature
         let candidates: Vec<_> = cx
             .tcx
@@ -96,7 +111,7 @@ impl<'tcx> LateLintPass<'tcx> for FnParamRefClonedLate {
             .skip_binder()
             .inputs()
             .into_iter()
-            .zip(fn_body.params)
+            .zip(expr)
             .filter_map(|(ty, param)| {
                 if let Some((id, span)) = get_param_id_span(cx, param)
                     && is_candidate_ty(cx, ty, &must_impl_trait, &cant_impl_trait)
